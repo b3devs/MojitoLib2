@@ -1,0 +1,191 @@
+<!--
+ * Copyright (c) 2013-2019 b3devs@gmail.com
+ * MIT License: https://spdx.org/licenses/MIT.html
+-->
+
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+  </head>
+  <body>
+
+<style type="text/css">
+.window_area
+{
+  font-family: Calibri,Arial,Helvetica;
+  font-size: 14px;
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+}
+
+td
+{
+  margin: 2px;
+  padding-top: 4px;
+}
+
+input
+{
+  margin: 2px;
+  padding: 2px;
+  font-size: Small;
+}
+</style>
+
+<?
+var mintAccount = Utils.getMintLoginAccount();
+if (Debug.enabled) Debug.log("Showing manual_mint_auth.html");
+?>
+<form class="window_area">
+
+<table style='width: 100%'>
+<tr>
+<td style='margin-top: 10px' colspan=2>HTTP headers from mint.intuit.com (see <a target="_blank" href='http://b3devs.blogspot.com/p/mint-auth-steps.html'>these steps</a> for getting the headers):</td>
+</tr>
+<tr>
+<td colspan=2><textarea id='request_headers' style='height:220px; width: 98%; margin: 2px'></textarea></td>
+</tr>
+</table>
+
+<div id="login_error" style="visibility: hidden; text-align: center; color: red;">Authentication failed</div>
+
+<div>
+<p style="text-align: center; margin-bottom: 0;">
+<input id="ok_button" type="button" value="OK" onclick="onOK();" style="height: 30px; width: 75px;"/>
+&nbsp;&nbsp;
+<input id="cancel_button" type="button" value="Cancel" onclick="onCancel();" style="height: 30px; width: 75px;"/>
+</p>
+</div>
+
+</form>
+
+<script type="text/javascript">
+
+function onOK() {
+  try
+  {
+    var reqHeaders = document.getElementById("request_headers").value;
+    if (!reqHeaders) {
+      throw 'HTTP headers from an active Mint session must be provided';
+    }
+
+    var args = extractRelevantPartsFromRequestHeaders(reqHeaders);
+
+    document.getElementById("ok_button").disabled = true;
+    document.getElementById("login_error").style.visibility = "hidden";
+
+    google.script.run.withSuccessHandler(onLoginResult).invokeFunction("MojitoLib.Mint.Session.verifyManualAuth", args);
+  }
+  catch (e)
+  {
+    var elemError = document.getElementById("login_error");
+    elemError.innerHTML = e;
+    elemError.style.visibility = "visible";
+  }
+}
+
+function onCancel() {
+  closeWindow();
+}
+
+function onLoginResult(loginSuccess) {
+  if (loginSuccess) {
+    closeWindow();
+    return;
+  }
+
+  // Login failed. Show the "Login failed" text and set focus to the password field.
+  var elemError = document.getElementById("login_error");
+  elemError.innerHTML = 'Authentication failed.';
+  elemError.style.visibility = "visible";
+
+  document.getElementById("ok_button").disabled = false;
+  var requestHeadersField = document.getElementById("request_headers");
+  requestHeadersField.focus(); // focus() doesn't work due to security restrictions in Google's "caja" sandbox...
+}
+
+function closeWindow() {
+  google.script.host.close();
+}
+
+function extractRelevantPartsFromRequestHeaders(reqHeaders) {
+  var headers = reqHeaders.split('\n');
+  return {
+    cookie: extractCookie(headers),
+    authorization: extractAuthorization(headers),
+    intuitTid: extractIntuitTid(headers)
+  };
+}
+
+function extractCookie(headers) {
+  var idx = headers.findIndex(function(hdr) {
+    return (hdr.startsWith('cookie:') || hdr.startsWith('Cookie:'));
+  });
+
+  if (idx < 0) {
+    throw 'Unable to find "cookie:" entry in HTTP headers';
+  }
+
+  var cookieHeader = headers[idx];
+  var cookies = cookieHeader.substr('cookie:'.length);
+  if (!cookies) {
+    throw 'Unable parse cookie values from Cookie: header';
+  }
+
+  return cookies;
+}
+
+function extractAuthorization(headers) {
+  var idx = headers.findIndex(function(hdr) {
+    return (hdr.startsWith('authorization:'));
+  });
+
+  if (idx < 0) {
+    throw 'Unable to find "authorization:" entry in HTTP headers';
+  }
+
+  var authHeader = headers[idx];
+  var auth = authHeader.substr('authorization:'.length).trim();
+  if (auth.startsWith('"')) {
+    auth = auth.substr(1);
+  }
+  if (auth.endsWith('"')) {
+    auth = auth.substr(0, auth.length - 1);
+  }
+  if (!auth) {
+    throw 'Unable parse value from authorization: header';
+  }
+
+  return auth;
+}
+
+function extractIntuitTid(headers) {
+  var idx = headers.findIndex(function(hdr) {
+    return (hdr.startsWith('intuit_tid:'));
+  });
+
+  if (idx < 0) {
+    throw 'Unable to find "intuit_tid:" entry in HTTP headers';
+  }
+
+  var tidHeader = headers[idx];
+  var tid = tidHeader.substr('intuit_tid:'.length).trim();
+  if (tid.startsWith('"')) {
+    tid = tid.substr(1);
+  }
+  if (tid.endsWith('"')) {
+    tid = tid.substr(0, tid.length - 1);
+  }
+  if (!tid) {
+    throw 'Unable parse value from intuit_tid: header';
+  }
+
+  return tid;
+}
+
+
+</script>
+</body>
+</html>

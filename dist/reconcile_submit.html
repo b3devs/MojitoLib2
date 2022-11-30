@@ -1,0 +1,56 @@
+<!--
+ * Copyright (c) 2013-2019 b3devs@gmail.com
+ * MIT License: https://spdx.org/licenses/MIT.html
+-->
+
+<style>
+.msg_area
+{
+  font-family: Calibri;
+  font-size: Medium;
+  width: 100%;
+  height: 125px;
+  overflow: auto;
+}
+</style>
+
+<?
+var paramsJson = Utils.getPrivateCache().get(Const.CACHE_RECONCILE_SUBMIT_PARAMS);
+Debug.log("paramsJson: %s", paramsJson);
+var reconcileParams = JSON.parse(paramsJson);
+
+Utils.getPrivateCache().remove(Const.CACHE_RECONCILE_SUBMIT_PARAMS);
+?>
+<div class="msg_area">
+<p>Account "<?!= reconcileParams.account ?>" was successfully reconciled.</p>
+<p>Would you like to save your reconciled transactions to Mint now?</p>
+</div>
+<div>
+<p style="text-align: center; margin-bottom: 0;">
+<input type="button" id="yes_button" value="Yes" onclick="submitChanges();" style="height: 30px; width: 75px;"/>
+&nbsp;&nbsp;
+<input type="button" id="cancel_button" value="Cancel" onclick="closeWindow()" style="height: 30px; width: 75px;"/>
+</p>
+</div>
+<script type="text/javascript">
+function submitChanges() {
+  try
+  {
+  <? Debug.log("Calling 'MojitoLib.Reconcile.submitReconciledTransactions'") ?>
+    var args = <?!= paramsJson ?>;
+
+    document.getElementById("yes_button").disabled = true;
+
+    google.script.run.withSuccessHandler(closeWindow).invokeFunction("MojitoLib.Reconcile.submitReconciledTransactions", args);
+  }
+  catch (e)
+  {
+    alert(e.toString());
+  }
+}
+
+function closeWindow() {
+  google.script.host.close();
+}
+
+</script>

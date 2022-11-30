@@ -1,0 +1,26 @@
+<!--
+ * Copyright (c) 2013-2019 b3devs@gmail.com
+ * MIT License: https://spdx.org/licenses/MIT.html
+-->
+
+<style>
+</style>
+
+<div style="border:5px; width=100%; height=100%">
+<div id="sheetType" class="">
+Text here
+</div>
+</div>
+
+<script type="text/javascript">
+
+function updateSheetType(sheetType) {
+  document.getElementById("sheetType").textContent = sheetType;
+  setTimeout(checkActiveSheet, 2000);
+}
+
+function checkActiveSheet() {
+  google.script.run.withSuccessHandler(updateSheetType).invokeFunction("MojitoLib.Sheets.getSheetType");
+}
+setTimeout(checkActiveSheet, 2000);
+</script>
