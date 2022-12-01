@@ -642,7 +642,15 @@ export const Ui = {
             }
             // Convert dateValues[i] to date string and assign balance values to it
             // Debug.log(`dateValues[${i}]: "${dateValues[i]}"`);
-            acctBalDataMap[dateValues[i].toISOString().split('T')[0]] = balValues[i];
+            const dateVal = '';
+            if (dateValues[i] instanceof Date) {
+              dateVal = dateValues[i].toISOString().split('T')[0];
+            } else {
+              if (Debug.enabled) Debug.log(`Ui.AccountBalanceImportWindow.onImport() - Found invalid value in Date column of AccoutData sheet: "${dateValues[i]}"`);
+              // Attempt to handle non-date value gracefully. Coerce it to a string and hope their aren't duplicates.
+              dateVal = `${dateValues[i]}`;
+            }
+            acctBalDataMap[dateVal] = balValues[i];
           }
         }
 
