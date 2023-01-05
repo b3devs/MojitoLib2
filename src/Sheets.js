@@ -913,12 +913,9 @@ export const Sheets = {
                 // We need to sort our array of split item rows so that the txn ids are also in numerical
                 // order to line up with the response. Note that new split items will have a txn id of 0, so
                 // we should put those at the end so they get the newest txn ids in the response.
-                if (Debug.traceEnabled) {
-                  Debug.trace("splitTxnIds: " + JSON.stringify(splitTxnIds));
-                  Debug.trace("splitRows BEFORE: " + JSON.stringify(splitRowIndexes));
-                }
+                if (Debug.enabled) Debug.log(`splitTxnIds for txn ${txnId}:  ${JSON.stringify(splitTxnIds)}`);
                 Debug.assert(rowValues[0][Const.IDX_TXN_PARENT_ID] === splitTxns[0][Const.IDX_TXN_PARENT_ID], `Expected: rowValues[0][Const.IDX_TXN_PARENT_ID] === splitTxns[0][Const.IDX_TXN_PARENT_ID]`);
-                Debug.assert(splitCount === splitTxnIds.length - 1, `Expected: splitCount === splitTxnIds.length - 1, Actual: ${splitTxnIds.length}`);
+                Debug.assert(splitCount === splitTxnIds.length, `Expected: splitCount === splitTxnIds.length, Actual: ${splitCount} -- ${splitTxnIds.length}`);
                 splitRowIndexes = splitRowIndexes.sort(function(a, b) {
                   let aTxnId = trv.txnValues[a][IDX_TXN_ID];
                   let bTxnId = trv.txnValues[b][IDX_TXN_ID];
@@ -935,12 +932,11 @@ export const Sheets = {
                   //Debug.log("(a, b): %s, %s, return %s", aTxnId, bTxnId, result);
                   return result;
                 });
-                if (Debug.traceEnabled) Debug.trace("splitRows AFTER: " + JSON.stringify(splitRowIndexes));
 
                 // Set the txn id of each new split txn in the group, and clear the edit status column for all split txns
                 for (let j = 0; j < splitCount; ++j) {
                   let splitRowNum = splitRowIndexes[j];
-                  let responseTxnId = splitTxnIds[j + 1]; // + 1 because the first entry in the array is the parent txn id
+                  let responseTxnId = splitTxnIds[j];
                   let splitTxnId = trv.txnValues[splitRowNum][IDX_TXN_ID];
 
                   if (splitTxnId === 0) {
@@ -1037,7 +1033,7 @@ export const Sheets = {
         let origAmount = rowValues[0][Const.IDX_TXN_ORIG_AMOUNT];
         let splitAmount = Math.round((origAmount - newAmount)*100) / 100; // Round off to cents
         // If this is not already a split txn, then the txn id will become the parent id
-        let parentId = (isSplitTxn ? rowValues[0][Const.IDX_TXN_PARENT_ID] : rowValues[0][IDX_TXN_ID]);
+        let parentId = (isSplitTxn ? rowValues[0][Const.IDX_TXN_PARENT_ID] : rowValues[0][Const.IDX_TXN_ID]);
 
         let offsetEditRow = editRow - trv.txnRange.getRow();
 

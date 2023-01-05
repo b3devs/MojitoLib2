@@ -218,7 +218,7 @@ export const Mint = {
         {
           let respBody = response.getContentText();
           let result = JSON.parse(respBody);
-          Debug.log(`result: ${JSON.stringify(result, null, '  ')}`);
+          // Debug.log(`result: ${JSON.stringify(result, null, '  ')}`);
           let importDate = new Date();
           let mintAccount = Utils.getMintLoginAccount();
           txnData = this.copyDataIntoValueArray((Array.isArray(result) ? result : [result]), importDate, mintAccount);
