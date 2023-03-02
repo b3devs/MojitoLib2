@@ -790,7 +790,21 @@ export const Sheets = {
     // Sheets.TxnData
     saveModifiedTransactions(mintAccount, interactive)
     {
-      const { IDX_TXN_ID } = Const;
+      const {
+        IDX_TXN_ID,
+        IDX_TXN_PARENT_ID,
+        IDX_TXN_EDIT_STATUS,
+        IDX_TXN_AMOUNT,
+        IDX_TXN_MEMO,
+        IDX_TXN_MERCHANT,
+        IDX_TXN_CAT_ID,
+        IDX_TXN_STATE,
+        IDX_TXN_LAST_COL,
+        EDITTYPE_DELETE,
+        EDITTYPE_NEW,
+        EDITTYPE_SPLIT,
+        NO_COLOR
+      } = Const;
       let allSucceeded = true;
 
       try
@@ -808,7 +822,7 @@ export const Sheets = {
         let startRow = txnRange.getRow();
 
         // Get the "Edit" column and the "Mint Account" column
-        let editRange = txnRange.offset(0, Const.IDX_TXN_EDIT_STATUS, numRows, 1);
+        let editRange = txnRange.offset(0, IDX_TXN_EDIT_STATUS, numRows, 1);
         let editValues = editRange.getValues();
         let editBgColors = editRange.getBackgrounds();
         let mintAcctRange = txnRange.offset(0, Const.IDX_TXN_MINT_ACCOUNT, numRows, 1);
@@ -833,15 +847,15 @@ export const Sheets = {
           let rowIndex = pendingUpdates[i];
 
           let editStatus = editValues[rowIndex][0];
-          if (editStatus === null || editStatus === "") {
+          if (!editStatus) {
             // This was probably a split txn that we already handled.
             continue;
           }
           editStatus = editStatus.toUpperCase();
 
-          let rowRange = txnRange.offset(rowIndex, 0, 1, Const.IDX_TXN_LAST_COL + 1);
+          let rowRange = txnRange.offset(rowIndex, 0, 1, IDX_TXN_LAST_COL + 1);
           let rowValues = rowRange.getValues();
-          let isSplitTxn = (editStatus.indexOf(Const.EDITTYPE_SPLIT) >= 0);
+          let isSplitTxn = (editStatus.indexOf(EDITTYPE_SPLIT) >= 0);
           let splitRowIndexes = [];
           let updateFormData = null;
           let trv = null;
@@ -855,12 +869,16 @@ export const Sheets = {
             const splitRows = splitRowIndexes.map(idx => trv.txnValues[idx]);
             updateFormData = Mint.TxnData.getSplitUpdatePayload(splitRows);
           }
-          else if (editStatus === Const.EDITTYPE_DELETE) {
+          else if (editStatus === EDITTYPE_DELETE) {
             // NOTE: Deleting a txn is only supported in debug mode, and user must manually delete
             // the spreadsheet rows after the mint update is complete.
             if (Debug.txnDeleteEnabled) {
-              updateFormData = Mint.TxnData.getUpdatePayload(rowValues[0], Const.EDITTYPE_DELETE);
+              updateFormData = Mint.TxnData.getUpdatePayload(rowValues[0], EDITTYPE_DELETE);
             }
+          }
+          else if (editStatus === EDITTYPE_NEW) {
+            // New transaction
+            updateFormData = Mint.TxnData.getUpdatePayload(rowValues[0], editStatus, true);
           }
           else {
             // Update of normal transaction
@@ -877,30 +895,29 @@ export const Sheets = {
             //
             // Upload the transaction to Mint
             //
-            Mint.TxnData.updateTransaction(txnId, updateFormData);
+            Mint.TxnData.updateTransaction(txnId, updateFormData, editStatus);
 
             // Handle split changes first
             if (isSplitTxn) {
-              const splitTxns = Mint.TxnData.fetchSplitTransactions(txnId);
+              const splitTxns = Mint.TxnData.fetchSplitTransactions(txnId) || [];
               const splitTxnIds = splitTxns.map(t => t[IDX_TXN_ID]);
-              // Debug.log(`updateFormData: ${JSON.stringify(splitTxns, null, '  ')}`);
-              Debug.log(`updateFormData: ${JSON.stringify(updateFormData, null, '  ')}`);
+              // Debug.log(`fetched split txns for id ${txnId}: ${JSON.stringify(splitTxns, null, '  ')}`);
               const splitCount = splitRowIndexes.length;
 
               if (splitCount === 1) {
                 // Split group only has one txn, so revert it to a non-split txn
-                Debug.assert(rowValues[0][Const.IDX_TXN_PARENT_ID] === splitTxns[0][Const.IDX_TXN_ID], `Expected: rowValues[0][Const.IDX_TXN_PARENT_ID] === splitTxns[0][Const.IDX_TXN_ID]`);
+                Debug.assert(rowValues[0][IDX_TXN_PARENT_ID] === splitTxns[0][IDX_TXN_ID], `Expected: rowValues[0][IDX_TXN_PARENT_ID] === splitTxns[0][IDX_TXN_ID]`);
                 Debug.assert(splitTxnIds.length === 1, `Expected: splitTxns.length === 1, Actual: ${splitTxns.length}`);
-                const splitRowRange = trv.txnRange.offset(splitRowIndexes[0], 0, 1, Const.IDX_TXN_LAST_COL);
+                const splitRowRange = trv.txnRange.offset(splitRowIndexes[0], 0, 1, IDX_TXN_LAST_COL);
                 const splitRowValues = splitRowRange.getValues();
                 splitRowValues[0][IDX_TXN_ID] = splitTxnIds[0];
-                splitRowValues[0][Const.IDX_TXN_PARENT_ID] = null;
-                splitRowValues[0][Const.IDX_TXN_STATE] = null;
+                splitRowValues[0][IDX_TXN_PARENT_ID] = null;
+                splitRowValues[0][IDX_TXN_STATE] = null;
                 splitRowRange.setValues(splitRowValues);
                 Debug.log("Reverting single split txn to a regular non-split txn");
 
                 // Clear "S" from edit status
-                const newEditStatus = editStatus.replace(Const.EDITTYPE_SPLIT, "");
+                const newEditStatus = editStatus.replace(EDITTYPE_SPLIT, "");
                 editValues[ splitRowIndexes[0] ][0] = newEditStatus;
                 editBgColors[rowIndex][0] = Const.NO_COLOR;
                 if (Debug.enabled) Debug.log("Split removed: Changing txn row index %s to edit status '%s'", splitRowIndexes[0], newEditStatus);
@@ -909,55 +926,43 @@ export const Sheets = {
                   ++successCount;
                 }
               } else {
-                // The response contains a txn id for each of the split items (sorted in numerical order).
-                // We need to sort our array of split item rows so that the txn ids are also in numerical
-                // order to line up with the response. Note that new split items will have a txn id of 0, so
-                // we should put those at the end so they get the newest txn ids in the response.
+                // The response contains a txn id for each of the split items.
                 if (Debug.enabled) Debug.log(`splitTxnIds for txn ${txnId}:  ${JSON.stringify(splitTxnIds)}`);
                 Debug.assert(rowValues[0][Const.IDX_TXN_PARENT_ID] === splitTxns[0][Const.IDX_TXN_PARENT_ID], `Expected: rowValues[0][Const.IDX_TXN_PARENT_ID] === splitTxns[0][Const.IDX_TXN_PARENT_ID]`);
                 Debug.assert(splitCount === splitTxnIds.length, `Expected: splitCount === splitTxnIds.length, Actual: ${splitCount} -- ${splitTxnIds.length}`);
-                splitRowIndexes = splitRowIndexes.sort(function(a, b) {
-                  let aTxnId = trv.txnValues[a][IDX_TXN_ID];
-                  let bTxnId = trv.txnValues[b][IDX_TXN_ID];
-                  let result = 0;
-                  if (aTxnId === 0) {
-                    result = 1;
-                  }
-                  else if (bTxnId === 0) {
-                      result = -1;
-                  }
-                  else {
-                    result = (aTxnId < bTxnId ? -1 : (aTxnId > bTxnId ? 1 : 0));
-                  }
-                  //Debug.log("(a, b): %s, %s, return %s", aTxnId, bTxnId, result);
-                  return result;
-                });
 
                 // Set the txn id of each new split txn in the group, and clear the edit status column for all split txns
-                for (let j = 0; j < splitCount; ++j) {
-                  let splitRowNum = splitRowIndexes[j];
-                  let responseTxnId = splitTxnIds[j];
-                  let splitTxnId = trv.txnValues[splitRowNum][IDX_TXN_ID];
+                for (const splitRowNum of splitRowIndexes) {
+                  const splitRow = trv.txnValues[splitRowNum];
+                  const splitRowTxnId = splitRow[IDX_TXN_ID];
+                  const foundSplitIdx = Utils.findArrayIndex(splitTxns, txn =>
+                    txn[IDX_TXN_AMOUNT] === splitRow[IDX_TXN_AMOUNT] &&
+                    txn[IDX_TXN_CAT_ID] === splitRow[IDX_TXN_CAT_ID] &&
+                    txn[IDX_TXN_MEMO] === splitRow[IDX_TXN_MEMO]);
+                  const splitResponseTxn = (foundSplitIdx < 0 ? null : splitTxns[foundSplitIdx]);
+                  Debug.assert(!!splitResponseTxn, `No fetched split txn found for split item with amount ${splitRow[IDX_TXN_AMOUNT]}`);
+                  let splitResponseTxnId = splitResponseTxn[IDX_TXN_ID];
+                  if (Debug.log) Debug.log(`Split txn id for ['${splitRow[IDX_TXN_MERCHANT]}', ${splitRow[IDX_TXN_AMOUNT]}, cat: ${splitRow[IDX_TXN_CAT_ID]}, memo: '${splitRow[IDX_TXN_MEMO]}']: ${splitResponseTxnId || '<EMPTY>'}`);
 
-                  if (splitTxnId === 0) {
-                    let splitTxnIdCell = trv.txnRange.offset(splitRowNum, IDX_TXN_ID, 1, 1);
-                    splitTxnIdCell.setValue(responseTxnId);
+                  if (splitRowTxnId === 0) {
+                    const splitTxnIdCell = trv.txnRange.offset(splitRowNum, IDX_TXN_ID, 1, 1);
+                    splitTxnIdCell.setValue(splitResponseTxnId);
                   }
                   else {
-                    Debug.assert(responseTxnId === splitTxnId, "responseTxnId (" + responseTxnId + ") === splitTxnId (" + splitTxnId + ")");
+                    Debug.assert(splitResponseTxnId === splitRowTxnId, "responseTxnId (" + splitResponseTxnId + ") === splitTxnId (" + splitRowTxnId + ")");
                   }
                   
                   // Clear "S" from the edit status
                   let newEditStatus = editValues[splitRowNum][0]; // Get current edit type for this split item
-                  newEditStatus = newEditStatus.replace(Const.EDITTYPE_SPLIT, "");
+                  newEditStatus = newEditStatus.replace(EDITTYPE_SPLIT, "");
                   editValues[splitRowNum][0] = newEditStatus;
-                  editBgColors[rowIndex][0] = Const.NO_COLOR;
-                  if (Debug.enabled) Debug.log("Split: Changing txn row index %s to edit status '%s'", splitRowNum, newEditStatus);
+                  editBgColors[rowIndex][0] = NO_COLOR;
+                  if (Debug.enabled) Debug.log(`Split: Changing txn row index ${splitRowNum} to edit status '${newEditStatus}'`);
                   if (newEditStatus.length === 0) {
                     // This txn has no more changes to save. Increment the 'success' counter
                     ++successCount;
                   }
-                } // for j
+                } // for (splitRowNum) loop
 
               }
 
@@ -1209,8 +1214,7 @@ export const Sheets = {
     },
 
     // Mint.TxnData
-    formatSheet: function (range, txnValues, rowCount)
-    {
+    formatSheet(range, txnValues, rowCount) {
       Debug.log("formatTxnSheet start");
       var numCols = Const.IDX_TXN_LAST_VIEWABLE_COL + 1;
 
@@ -1500,27 +1504,26 @@ export const Sheets = {
       var idx = 0;
 
       try {
-      // Perform binary search
-      var start = 0;
-      var end = arrayLen - 1;
-      while(end - start < 1)
-      {
-        idx = parseInt(start + (((end - start) / 2)));// | 0); // bit-OR with zero to remove decimal, if any
-//        Debug.log('start: %d, end: %d, idx: %d', start, end, idx);
-        var thisTxnId = sortedTxnValues[idx][Const.IDX_TXN_ID];
-        if (thisTxnId === txnId) {
-          found = true;
-          break;
-        }
-        
-        if (txnId > thisTxnId) {
-          start = idx;
-        }
-        else {
-          end = idx;
-        }
-      }
+        // Perform binary search
+        var start = 0;
+        var end = arrayLen - 1;
+        while(end - start < 1)
+        {
+          idx = parseInt(start + (((end - start) / 2)));// | 0); // bit-OR with zero to remove decimal, if any
+  //        Debug.log('start: %d, end: %d, idx: %d', start, end, idx);
+          var thisTxnId = sortedTxnValues[idx][Const.IDX_TXN_ID];
+          if (thisTxnId === txnId) {
+            found = true;
+            break;
+          }
 
+          if (txnId > thisTxnId) {
+            start = idx;
+          }
+          else {
+            end = idx;
+          }
+        }
       }
       catch (e)
       {
@@ -1532,8 +1535,7 @@ export const Sheets = {
 
     //-----------------------------------------------------------------------------
     // Sheets.TxnData
-    mergeTxnValues(newValues, existingValues)
-    {
+    mergeTxnValues(newValues, existingValues) {
       // Overall algorithnm
       // 1. Delete pending txns and all txns with dates on or after the import start date
       // 2. Add new txns
@@ -1602,30 +1604,6 @@ export const Sheets = {
       return idx;
     },
 
-    //-----------------------------------------------------------------------------
-    // Sheets.TxnData
-    mergeTxnValuesOld(txnValues, existingValues)
-    {
-      Debug.log("Sorting txn array by txn id");
-      Utils.sort2dArray(existingValues, [Const.IDX_TXN_ID], [1]);
-      Debug.log("Sort by txn id finished.");
-      var existingLen = existingValues.length;
-      var length = txnValues.length;
-      for (var i = 0; i < length; ++i) {
-        var matchingTxnRow = this.findTxnSorted(existingValues, existingLen, txnValues[i][Const.IDX_TXN_ID]);
-        if (matchingTxnRow >= 0) {
-          Debug.log("Found existing txn id " + txnValues[i][Const.IDX_TXN_ID]);
-          existingValues.splice(matchingTxnRow, 1, txnValues[i]);
-        } else {
-          Debug.log("Adding new txn id " + txnValues[i][Const.IDX_TXN_ID]);
-          existingValues.push(txnValues[i]);
-        }
-      }
-      Debug.log("Sorting txn array by date");
-      Utils.sort2dArray(existingValues, [Const.IDX_TXN_DATE], [1]);
-      Debug.log("Sort by date finished.");
-    },
-
   }, // TxnData
 
   ////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1648,8 +1626,7 @@ export const Sheets = {
 
     //-----------------------------------------------------------------------------
     // Sheets.AccountData
-    getAccountInfoMap()
-    {
+    getAccountInfoMap() {
       var acctInfoMap = null;
 
       var cache = Utils.getPrivateCache();
@@ -1748,190 +1725,6 @@ export const Sheets = {
 
       return { startDate, endDate };
     },
-
-    //-----------------------------------------------------------------------------
-    // Sheets.AccountData
-    insertAccountBalanceHistory(account)
-    {
-      var newBalCount = account.balanceHistory.length;
-
-      var acctRanges = Utils.getAccountDataRanges(); // Call Utils impl to get ranges with 1 row if no data exists.
-      var firstInsert = (acctRanges.isEmpty === true);
-
-      var numCols = acctRanges.hdrRange.getNumColumns();
-      var hdrRange = acctRanges.hdrRange.offset(0, 0, acctRanges.hdrRange.getNumRows(), numCols);
-      var hdrValues = hdrRange.getValues();
-
-      var mintLogin = Utils.getMintLoginAccount();
-      mintLogin = (mintLogin != null ? mintLogin.toLowerCase() : null);
-
-      // Find column index of this account
-      var j = 0;
-      for (; j < numCols; ++j)
-      {
-        // if the account id at index 'j' is the one we're looking for
-        // or we've reached the end of the accounts (meaning this is a new account)
-        // then we have our position.
-        var acctId = hdrValues[Const.IDX_ACCT_ID][j];
-        if (acctId === account.id || !acctId)
-        {
-          break;
-        }
-        // If this is the Mint demo data, then the account IDs probably won't match.
-        // We'll try matching the account name and financial institution instead.
-        if (mintLogin === Const.DEMO_MINT_LOGIN
-            && account.name === hdrValues[Const.IDX_ACCT_NAME][j]
-            && account.fiName === hdrValues[Const.IDX_ACCT_FINANCIAL_INST][j])
-        {
-          break;
-        }
-      }
-
-      var acctCol = j;
-      var newHdrRange = hdrRange.offset(0, acctCol, hdrRange.getNumRows(), 1);
-      var newHdrValues = newHdrRange.getValues();
-      newHdrValues[Const.IDX_ACCT_NAME][0] = account.name;
-      newHdrValues[Const.IDX_ACCT_FINANCIAL_INST][0] = account.fiName;
-      newHdrValues[Const.IDX_ACCT_TYPE][0] = account.type;
-      newHdrValues[Const.IDX_ACCT_ID][0] = account.id;
-      var acctNameCell = newHdrRange.offset(0, 0, 1, 1);
-      acctNameCell.setFontWeight("bold");
-
-      let newDateValues = new Array(newBalCount);
-      let newBalValues = new Array(newBalCount);
-
-      // Copy balances to newBalValues array and corresponding dates to newDateValues array
-      for (var i = 0; i < newBalCount; ++i) {
-        var balanceEntry = account.balanceHistory[i];
-        newDateValues[i] = [balanceEntry.dateStr];
-        newBalValues[i] = [balanceEntry.amount];
-      }
-
-      var balCount = acctRanges.balanceRange.getNumRows();
-      var dateRange = acctRanges.dateRange;
-      var dateValues = (firstInsert ? [] : dateRange.getValues());
-      var balRange = acctRanges.balanceRange.offset(0, acctCol, balCount, 1);
-      var balValues = (firstInsert ? [] : balRange.getValues());
-
-      // NOTE: Entries in newDateValues[] are **STRINGS** epoch timestamps, whereas entries in dateValues are Date's.
-      var insertDates = (dateValues.length === 0 ||
-                         dateValues.length !== newDateValues.length ||
-                         dateValues[0][0].getTime() !== new Date(newDateValues[0][0]) ||
-                         dateValues[balCount - 1][0].getTime() !== new Date(newDateValues[newBalCount - 1][0]));
-
-      // Sheets.AccountData.mergeBalanceValues(newDateValues, newBalValues, dateValues, balValues);
-
-      if (insertDates) {
-        if (Debug.enabled) Debug.log("Inserting dates for account balances");
-        dateRange = acctRanges.dateRange.offset(0, 0, dateValues.length, 1);
-        dateRange.setValues(dateValues);
-      }
-
-      newHdrRange.setValues(newHdrValues);
-      balRange = acctRanges.balanceRange.offset(0, acctCol, balValues.length, 1);
-      balRange.setValues(balValues);
-    },
-
-    //-----------------------------------------------------------------------------
-    // Sheets.AccountData
-//    insertAccountBalanceHistory_old(acctBalanceHistoryArray)
-//    {
-//      if (acctBalanceHistoryArray == null || acctBalanceHistoryArray.length === 0)
-//        return;
-//
-//      var acctCount = acctBalanceHistoryArray.length;
-//      Debug.log("inserting " + acctCount + " accounts");
-//      var newBalanceCount = acctBalanceHistoryArray[0].balanceHistory.length;
-//
-//      var firstInsert = (this.getAccountDataRanges().balanceRange == null ? true : false);
-//      var acctRanges = Utils.getAccountDataRanges(); // Call Utils impl to get ranges with 1 row if no data exists.
-//
-//      var numCols = Math.max(acctRanges.hdrRange.getNumColumns(), acctCount);
-//      var hdrRange = acctRanges.hdrRange.offset(0, 0, acctRanges.hdrRange.getNumRows(), numCols);
-//      var existingCount = (firstInsert ? 0 : acctRanges.balanceRange.getNumRows());
-//      var existingRange = acctRanges.balanceRange.offset(0, -1, acctRanges.balanceRange.getNumRows(), numCols + 1);
-//      var range = acctRanges.balanceRange.offset(existingCount, -1, newBalanceCount, numCols + 1);
-//
-//      var hdrValues = hdrRange.getValues();
-//      var existingValues = (existingCount === 0 ? null : existingRange.getValues());
-//      var newValues = range.getValues();
-//
-//      // Copy new dates into column 0
-//      for (var i = 0; i < newBalanceCount; ++i)
-//      {
-//        newValues[i][0] = new Date(acctBalanceHistoryArray[0].balanceHistory[i].date);
-//      }
-//
-//      for (var i = 0; i < acctCount; ++i)
-//      {
-//        var currAccount = acctBalanceHistoryArray[i];
-//        
-//        if (isNaN(currAccount.id) || currAccount.bal === "NOT_FOUND")
-//        {
-//          Browser.msgBox("Skipping invalid account: " + JSON.stringify(currAccount));
-//          continue;
-//        }
-//
-//        if (currAccount.isHidden)
-//        {
-//          if (Debug.enabled) Debug.log("Not displaying hidden account '%s'", currAccount.name);
-//          continue;
-//        }
-//
-//        // Find column index of this account
-//        var j = 0;
-//        for (; j < numCols; ++j)
-//        {
-//          // if the account id at index 'j' is the one we're looking for
-//          // or we've reached the end of the accounts (meaning this is a new account)
-//          // then we have our position.
-//          var acctId = hdrValues[Const.IDX_ACCT_ID][j];
-//          if (acctId === currAccount.id || acctId === "" || isNaN(acctId) || acctId == null)
-//          {
-//            break;
-//          }
-//          // If this is the Mint demo data, then the account IDs probably won't match.
-//          // We'll try matching the account name and financial institution instead.
-//          if (currAccount.name === hdrValues[Const.IDX_ACCT_NAME][j]
-//              && currAccount.fi === hdrValues[Const.IDX_ACCT_FINANCIAL_INST][j])
-//          {
-//            break;
-//          }
-//        }
-//        
-//        hdrValues[Const.IDX_ACCT_NAME][j] = currAccount.name;
-//        hdrValues[Const.IDX_ACCT_FINANCIAL_INST][j] = currAccount.fi;
-//        hdrValues[Const.IDX_ACCT_TYPE][j] = currAccount.klass;
-//        hdrValues[Const.IDX_ACCT_ID][j] = currAccount.id;
-//
-//        var isDebtAcct = (currAccount.klass === "credit" || currAccount.klass === "loan");
-//
-//        // Copy balances for this account into the newValues array
-//        // 
-//        var acctIndex = j + 1; // Index 0 of newValues is the date column, so add 1
-//        for (var k = 0; k < newBalanceCount; ++k) {
-//          var balanceEntry = currAccount.balanceHistory[k];
-//          newValues[k][acctIndex] = (isDebtAcct ? -balanceEntry.value : balanceEntry.value);
-//        }
-//      }
-//
-//      // Merge newValues with the existingValues.
-//      if (existingValues != null) {
-//        Sheets.AccountData.mergeBalanceValues(newValues, existingValues);
-//      } else {
-//        existingValues = newValues;
-//      }
-//
-//      // Get column count and refresh ranges in case new accounts were added.
-//      Debug.log('Inserting account balances:  hdrValues.columns: %d, accountCount: %d, numCols: %d', hdrValues[0].length, acctCount, numCols);
-//      hdrRange = hdrRange.offset(0, 0, hdrRange.getNumRows(), numCols);
-//      existingRange = existingRange.offset(0, 0, existingValues.length, numCols + 1);
-//
-//      hdrRange.setValues(hdrValues);
-//      existingRange.setValues(existingValues);
-////      dateColRange.setValues(dateValues);
-//    },
-//
 
     //-----------------------------------------------------------------------------
     // Sheets.AccountData

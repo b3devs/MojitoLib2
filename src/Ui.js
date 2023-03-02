@@ -558,15 +558,20 @@ export const Ui = {
         acctInfoArray = acctInfoArray.filter((acct) => {
           if (!acct.isVisible)
           {
-            if (Debug.enabled) Debug.log(`Ignoring hidden account '${acct.name}'`);
+            if (Debug.enabled) Debug.log(`IGNORING [hidden] account '${acct.name}' (id: ${acct.id})`);
+            return false;
+          }
+          if (acct.isClosed)
+          {
+            if (Debug.enabled) Debug.log(`IGNORING [closed] account '${acct.name}' (id: ${acct.id})`);
             return false;
           }
           if (acct.isClosed || acct.isDeleted)
           {
-            if (Debug.enabled) Debug.log(`Ignoring closed / deleted account '${acct.name}'`);
+            if (Debug.enabled) Debug.log(`IGNORING [deleted] account '${acct.name}' (id: ${acct.id})`);
             return false;
           }
-          if (Debug.enabled) Debug.log(`Including account '${acct.name}'`);
+          if (Debug.enabled) Debug.log(`Including account '${acct.name}' (id: ${acct.id})`);
           return true;
         });
 
@@ -596,16 +601,17 @@ export const Ui = {
               return (a?.id === existingAcctInfo[IDX_ACCT_ID][i]);
             });
             if (idx < 0) {
+              if (Debug.enabled) Debug.log(`Existing acct "${existingAcctInfo[IDX_ACCT_NAME][i]}" not found in Mint acct list by id (${existingAcctInfo[IDX_ACCT_ID][i]}). Searching for name match instead.`);
               idx = Utils.findArrayIndex(acctInfoArray, (a) => a?.name === existingAcctInfo[IDX_ACCT_NAME][i]);
             }
 
             if (idx >= 0) {
-              Debug.log(`Index of acct "${acctInfoArray[idx].name}" found at ${idx}`)
+              if (Debug.enabled) Debug.log(`Index of acct "${acctInfoArray[idx].name}" (id: ${acctInfoArray[idx].id}) found at index ${idx}`);
               acctInfoArrayMerged.push(acctInfoArray[idx]);
               acctInfoArray[idx] = null;
             }
             else {
-              Debug.log(`Existing acct not found: "${existingAcctInfo[IDX_ACCT_NAME][i]}"`);
+              if (Debug.enabled) Debug.log(`Existing acct "${existingAcctInfo[IDX_ACCT_NAME][i]}" not found`);
               acctInfoArrayMerged.push({
                 name: existingAcctInfo[IDX_ACCT_NAME][i],
                 fiName: existingAcctInfo[IDX_ACCT_FINANCIAL_INST][i],
@@ -620,10 +626,11 @@ export const Ui = {
           let acctCount = acctInfoArray.length;
           for (let i = 0; i < acctCount; ++i) {
             if (acctInfoArray[i]) {
-              Debug.log(`New acct (idx ${i}): "${existingAcctInfo[IDX_ACCT_NAME][i]}"`);
+              if (Debug.enabled) Debug.log(`New acct (idx ${i}): "${acctInfoArray[i].name}", id: ${acctInfoArray[i].id}`);
               acctInfoArrayMerged.push(acctInfoArray[i]);
             }
           }
+          // Merge is complete. Now point acctInfoArray variable at accInfoArrayMerged.
           acctInfoArray = acctInfoArrayMerged;
           acctCount = acctInfoArray.length;
 

@@ -97,7 +97,7 @@ export const Mint = {
 //              break;
 //            }
           }
-          
+
         } while (true);
 
         if (interactive && showImportCount) toast("Download complete. Importing " + offset + " transactions into Mojito", "Mint transaction import", 60);
@@ -117,7 +117,7 @@ export const Mint = {
         Debug.log(Debug.getExceptionInfo(e));
         Browser.msgBox("Error: " + e.toString());
       }
-      
+
     },
 
     // Mint.TxnData
@@ -176,7 +176,7 @@ export const Mint = {
         }
         else
         {
-          toast("Data retrieval failed. HTTP status code: " + response.getResponseCode(), "Update error");
+          toast("Data retrieval failed. HTTP status code: " + response.getResponseCode(), "Download error");
         }
       }
       catch(e)
@@ -234,7 +234,7 @@ export const Mint = {
     },
 
     // Mint.TxnData
-    updateTransaction(txnId, payload)
+    updateTransaction(txnId, payload, editType)
     {
       let result = { success: false, responseJson: null };
 
@@ -254,7 +254,7 @@ export const Mint = {
         };
 
         let options = {
-          method: 'PUT',
+          method: (editType === Const.EDITTYPE_NEW ? 'POST' : 'PUT'),
           headers,
           payload: JSON.stringify(payload),
           followRedirects: false,
@@ -271,7 +271,10 @@ export const Mint = {
         else {
           respBody = response.getContentText();
 
-          if (respCode === 200) {
+          if (respCode === 201) {
+            result.success = true;
+          }
+          else if (respCode === 200) {
             //let respHeaders = response.getAllHeaders();
             //Debug.log("Response headers: " + respHeaders.toSource());
 
@@ -382,7 +385,8 @@ export const Mint = {
         
         // Determine 'state' column
         let state = null;
-        if (childItem.isPending === true && (!props || props.pending !== 'ignore')) {
+        if ((childItem.isPending === true || childItem.manualTransactionType === 'PENDING')
+            && (!props || props.pending !== 'ignore')) {
           state = TXN_STATUS_PENDING;
         } else if (parentId) {
           state = TXN_STATUS_SPLIT;
@@ -477,18 +481,13 @@ export const Mint = {
       let payload = null;
 
       if (editType === Const.EDITTYPE_DELETE) {
-        payload = {
-          // FIXME: Update this to new Mint API
-            "task": "delete",
-            // "token": token,
-            "txnId": String(txnRow[Const.IDX_TXN_ID])
-          };
+        //FIXME:
+        Debug.assert(`Edit type 'DELETE' is not yet implemented`);
       }
       else {
 /*
 payload: {"description":"Foreside House of Pizza","type":"CashAndCreditTransaction"}
-payload: {"category":{"id":"43248151_706"},"type":"CashAndCreditTransaction"}
-{"type":"CashAndCreditTransaction","notes":"test note","tagData":{"tags":[{"id":"43248151_803867"}]}}
+payload: {"category":{"id":"43248151_706"},"type":"CashAndCreditTransaction","notes":"test note","tagData":{"tags":[{"id":"43248151_803867"}]}}
 */
         let memo = txnRow[Const.IDX_TXN_MEMO];
         let propsJson = txnRow[Const.IDX_TXN_MOJITO_PROPS];
@@ -511,18 +510,23 @@ payload: {"category":{"id":"43248151_706"},"type":"CashAndCreditTransaction"}
         }
 
         if (editType === Const.EDITTYPE_NEW) {
-        //   let acctInfoMap = Sheets.AccountData.getAccountInfoMap();
-        //   let acctInfo = (!acctInfoMap ? null: acctInfoMap[ String(txnRow[Const.IDX_TXN_ACCOUNT]) ]);
-        //   if (!acctInfo) {
-        //     throw Utilities.formatString("Account \"%s\" not found. Unable to determine account id.", txnRow[Const.IDX_TXN_ACCOUNT]);
-        //   }
+          let acctInfoMap = Sheets.AccountData.getAccountInfoMap();
+          let acctInfo = (!acctInfoMap ? null : acctInfoMap[`${txnRow[Const.IDX_TXN_ACCOUNT]}`]);
+          if (!acctInfo) {
+            throw new Error(`Account "${txnRow[Const.IDX_TXN_ACCOUNT]}" not found. Unable to determine account id.`);
+          }
 
-        //   payload["task"] = "txnAdd";
-        //   payload["txnId"] = ":0";
-        //   payload["mtCashSplitPref"] = "1";
-        //   payload["mtAccount"] = String(acctInfo.id);
-        //   payload["mtType"] = "pending-other";
-        //   payload["mtIsExpense"] = (amount < 0 ? "true": "false");
+          payload.accountId = acctInfo.id;
+          payload.parentId = null;
+          payload.id = null;
+          payload.isExpense = (payload.amount <= 0);
+          payload.isPending = false;
+          payload.isDuplicate = false;
+          payload.splitData = null;
+          payload.manualTransactionType = 'PENDING';
+          payload.checkNumber = null;
+          payload.isLinkedToRule = false;
+          payload.shouldPullFromAtmWithdrawals = false;
         }
 
         // Add tags, if any
@@ -1861,7 +1865,7 @@ return false;
     }
 
     let mintAccountMap = [];
-    
+  
     let mintAcctRange = txnRange.offset(0, Const.IDX_TXN_MINT_ACCOUNT, txnRange.getNumRows(), 1);
     let mintAcctValues = mintAcctRange.getValues();
     let mintAcctValuesLen = mintAcctValues.length;

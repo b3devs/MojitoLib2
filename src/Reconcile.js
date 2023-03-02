@@ -44,8 +44,7 @@ export const Reconcile = {
   },
 
   startReconcile() {
-    try
-    {
+    try {
       if (!Mint.getClearedTag() || !Mint.getReconciledTag()) {
         Browser.msgBox('Clear / Reconcile not enabled', 'You cannot reconcile an account until you enable this feature by specifying the corresponding tags on the Settings sheet. Refer to the Help sheet for instructions on how to do this.', Browser.Buttons.OK);
         return;
@@ -487,8 +486,7 @@ export const Reconcile = {
 
   Window: {
     show: function() {
-      try
-      {
+      try {
         const mintAccounts = Mint.getMintAccounts(null);
         if (mintAccounts == null || mintAccounts.length === 0) {
           Browser.msgBox('No Mint accounts were found. Make sure you have imported your transactions from Mint.');
@@ -507,7 +505,7 @@ export const Reconcile = {
         Utils.getPrivateCache().put(Const.CACHE_RECONCILE_WINDOW_ARGS, JSON.stringify(args), 60);
 
         const htmlOutput = HtmlService.createTemplateFromFile('reconcile_start.html').evaluate();
-        htmlOutput.setTitle("Reconcile an Account").setHeight(250).setWidth(365).setSandboxMode(HtmlService.SandboxMode.IFRAME);
+        htmlOutput.setTitle("Reconcile an Account").setHeight(255).setWidth(375).setSandboxMode(HtmlService.SandboxMode.IFRAME);
         const ss = SpreadsheetApp.getActiveSpreadsheet();
         if (ss != null) ss.show(htmlOutput);
       }
@@ -541,7 +539,7 @@ export const Reconcile = {
       let firstAcctDate = null;
 
       for (let name in acctInfoMap) {
-        if (acctInfoMap[name].type == 'bank' || acctInfoMap[name].type == 'credit') {
+        if (acctInfoMap[name].type == 'BankAccount' || acctInfoMap[name].type == 'CreditAccount') {
           const reconInfo = reconcileMap[name];
           let balance = 0.00;
           let reconDate = '';
@@ -612,9 +610,6 @@ export const Reconcile = {
       const okHandler = uiApp.createServerHandler('Reconcile_Window_onOkClicked').addCallbackElement(grid);
       btnOk.addClickHandler(okHandler);
       btnCancel.addClickHandler(uiApp.createServerHandler('Reconcile_Window_onCancelClicked'));
-      //const bankHandler = uiApp.createClientHandler().forEventSource().validateMatches(accountList, 'bank').forTargets(gridChecking).setVisible(true).forTargets(gridCredit).setVisible(false);
-      //const creditHandler = uiApp.createClientHandler().forEventSource().validateMatches(accountList, 'credit').forTargets(gridChecking).setVisible(false).forTargets(gridCredit).setVisible(true);
-      //accountList.addChangeHandler(bankHandler).addChangeHandler(creditHandler);
 
       // Pre-populate some fields
       endDateField.setValue(new Date()); // today
