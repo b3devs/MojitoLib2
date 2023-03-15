@@ -59,7 +59,8 @@ export const Reconcile = {
           return;
         }
       }
-      
+
+      toast('Getting reconcile history', 'Reconcile', 4);
       Reconcile.Window.show();
     }
     catch (e)
@@ -75,48 +76,68 @@ export const Reconcile = {
    */
   continueReconcile(args) {
     const {account, accountType, mintAccount, endDate, prevBalance, newBalance} = args;
+    const {
+      IDX_TXN_DATE,
+      IDX_TXN_ACCOUNT,
+      IDX_TXN_MINT_ACCOUNT,
+      IDX_TXN_MERCHANT,
+      IDX_TXN_AMOUNT,
+      IDX_TXN_CLEAR_RECON,
+      IDX_TXN_STATE,
+      TXN_STATUS_PENDING,
+      IDX_TXN_ID,
+      IDX_TXN_PARENT_ID,
+      IDX_RECON_DATE,
+      IDX_RECON_TXN_ID,
+      IDX_RECON_AMOUNT,
+      IDX_RECON_RECONCILE,
+      RECON_ROW_SUM,
+      RECON_ROW_TARGET,
+      RECON_COL_SAVED_PARAMS,
+      SHEET_NAME_RECONCILE
+    } = Const;
 
     try {
       const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(Const.SHEET_NAME_RECONCILE);
 
-      this.initReconcileSheet(sheet, account, prevBalance, newBalance);
+      this.initReconcileSheet(sheet, account, prevBalance, newBalance, endDate);
 
       // Get txns from TxnData sheet
       const txnRange = Utils.getTxnDataRange();
       let txnValues = txnRange.getValues();
       const txnDataLen = txnValues.length;
       let reconValues = [];
-      let splitValues = [];
+      let splitValues = {};
       
       // Loop through txns and copy the ones for the specified account that have not been
       // reconciled yet.
       for (let i = txnDataLen - 1; i >= 0; --i) {
-        if (String(txnValues[i][Const.IDX_TXN_ACCOUNT]) === account &&
-            (!mintAccount || txnValues[i][Const.IDX_TXN_MINT_ACCOUNT] === mintAccount) &&
-            txnValues[i][Const.IDX_TXN_CLEAR_RECON].toUpperCase() !== 'R' && // Ignore previously reconciled txns
-            txnValues[i][Const.IDX_TXN_STATE] !== Const.TXN_STATUS_PENDING)  // Ignore pending txns
+        if (String(txnValues[i][IDX_TXN_ACCOUNT]) === account &&
+            (!mintAccount || txnValues[i][IDX_TXN_MINT_ACCOUNT] === mintAccount) &&
+            txnValues[i][IDX_TXN_CLEAR_RECON].toUpperCase() !== 'R' && // Ignore previously reconciled txns
+            txnValues[i][IDX_TXN_STATE] !== TXN_STATUS_PENDING)  // Ignore pending txns
         {
-          const parentId = txnValues[i][Const.IDX_TXN_PARENT_ID];
+          const parentId = txnValues[i][IDX_TXN_PARENT_ID];
 
           let reconRow = [
-            txnValues[i][Const.IDX_TXN_DATE],
-            txnValues[i][Const.IDX_TXN_MERCHANT],
-            txnValues[i][Const.IDX_TXN_AMOUNT],
+            txnValues[i][IDX_TXN_DATE],
+            txnValues[i][IDX_TXN_MERCHANT],
+            txnValues[i][IDX_TXN_AMOUNT],
             '',
-            txnValues[i][Const.IDX_TXN_CLEAR_RECON],
-            (parentId > 0 ? 'S' : null),
-            txnValues[i][Const.IDX_TXN_ID]
+            txnValues[i][IDX_TXN_CLEAR_RECON],
+            (parentId ? 'S' : null),
+            txnValues[i][IDX_TXN_ID]
           ];
 
           // Aggregate split txns into a single txn
-          if (parentId > 0) {
+          if (parentId) {
             // It's a split txn, sum up the separate split txns in a separate map
-            const splitTxn = splitValues[String(parentId)];
-            if (splitTxn == null) {
-              reconRow[Const.IDX_RECON_TXN_ID] = parentId;
+            const splitTxn = splitValues[`${parentId}`];
+            if (!splitTxn) {
+              reconRow[IDX_RECON_TXN_ID] = parentId;
               splitValues[parentId] = reconRow;
             } else {
-              splitTxn[Const.IDX_RECON_AMOUNT] += reconRow[Const.IDX_RECON_AMOUNT];
+              splitTxn[IDX_RECON_AMOUNT] += reconRow[IDX_RECON_AMOUNT];
             }
           } else {
             // Not a split txn, just add it to the reconValues array
@@ -134,17 +155,17 @@ export const Reconcile = {
       }
 
       // Sort transactions by date, descending
-      reconValues.sort(function(a, b) { return (a[Const.IDX_RECON_DATE] > b[Const.IDX_RECON_DATE] ? -1 : (a[Const.IDX_RECON_DATE] < b[Const.IDX_RECON_DATE] ? 1 : 0)); });
+      reconValues.sort(function(a, b) { return (a[IDX_RECON_DATE] > b[IDX_RECON_DATE] ? -1 : (a[IDX_RECON_DATE] < b[IDX_RECON_DATE] ? 1 : 0)); });
       
-      let reconRange = Utils.getDataRange(Const.SHEET_NAME_RECONCILE, Const.IDX_RECON_TXN_ID + 1);
+      let reconRange = Utils.getDataRange(SHEET_NAME_RECONCILE, IDX_RECON_TXN_ID + 1);
       reconRange = reconRange.offset(0, 0, reconValues.length, reconValues[0].length);
       reconRange.setValues(reconValues);
 
       const rowCount = reconRange.getNumRows();
-      const amountColRange = reconRange.offset(0, Const.IDX_RECON_AMOUNT, rowCount, 1);
-      let rColRange = reconRange.offset(0, Const.IDX_RECON_RECONCILE, rowCount, 1);
+      const amountColRange = reconRange.offset(0, IDX_RECON_AMOUNT, rowCount, 1);
+      let rColRange = reconRange.offset(0, IDX_RECON_RECONCILE, rowCount, 1);
 
-      const reconTotalCell = sheet.getRange(Const.RECON_ROW_SUM, Const.IDX_RECON_AMOUNT + 1, 1, 1);
+      const reconTotalCell = sheet.getRange(RECON_ROW_SUM, IDX_RECON_AMOUNT + 1, 1, 1);
       reconTotalCell.setFormula(`=SUMIF(${rColRange.getA1Notation()}, "R", ${amountColRange.getA1Notation()})`);
       reconTotalCell.setFontWeight('bold');
       reconTotalCell.setBackground(this.RECON_ROW_COLOR);
@@ -153,7 +174,7 @@ export const Reconcile = {
       // Set number format of Amount column to '$0.00'
       let numberFormats = amountColRange.getNumberFormats();
       for (let i = 0; i < rowCount; ++i) {
-            numberFormats[i][0] = '$0.00';
+        numberFormats[i][0] = '$0.00';
       }
       amountColRange.setNumberFormats(numberFormats);
 
@@ -161,30 +182,30 @@ export const Reconcile = {
       rColRange = rColRange.offset(-1, 0, rColRange.getNumRows() + 1, 1);
       let fontWeights = rColRange.getFontWeights();
       for (let i = 0; i < rowCount; ++i) {
-            fontWeights[i][0] = 'bold';
+        fontWeights[i][0] = 'bold';
       }
       rColRange.setFontWeights(fontWeights);
       SpreadsheetUtils.setRowColors(rColRange, null, false, this.RECON_COL_COLOR, false);
 
       // Set the text color of the 'internal only' columns to light gray
-      const internalRange = reconRange.offset(-1,Const.IDX_RECON_TXN_ID, rowCount + 1, 2);
+      const internalRange = reconRange.offset(-1, IDX_RECON_TXN_ID, rowCount + 1, 2);
       SpreadsheetUtils.setRowColors(internalRange, null, false, Const.COLOR_TXN_INTERNAL_FIELD, true);
 
       // Set current cell to first R cell
-      const rCell = reconRange.offset(0, Const.IDX_RECON_RECONCILE, 1, 1);
+      const rCell = reconRange.offset(0, IDX_RECON_RECONCILE, 1, 1);
       rCell.activate();
 
       // Save reconcile params in a cell
       const reconcileParams = {
-        account: account,
-        accountType: accountType,
-        mintAccount: mintAccount,
-        endDate: endDate,
-        prevBalance: prevBalance, // make sure balances are float type
-        newBalance: newBalance,
+        account,
+        accountType,
+        mintAccount,
+        endDate,
+        prevBalance, // make sure balances are float type
+        newBalance,
       };
       const paramsJson = JSON.stringify(reconcileParams);
-      const paramsCell = sheet.getRange(Const.RECON_ROW_TARGET, Const.RECON_COL_SAVED_PARAMS, 1, 1);
+      const paramsCell = sheet.getRange(RECON_ROW_TARGET, RECON_COL_SAVED_PARAMS, 1, 1);
       paramsCell.setWrap(false);
       paramsCell.setBackground(Const.NO_COLOR);
       paramsCell.setFontColor(Const.NO_COLOR);
@@ -204,12 +225,30 @@ export const Reconcile = {
       return false;
     }
 
-    const reconRange = Utils.getDataRange(Const.SHEET_NAME_RECONCILE, Const.IDX_RECON_TXN_ID + 1);
+    const {
+      IDX_TXN_DATE,
+      IDX_TXN_ACCOUNT,
+      IDX_TXN_CLEAR_RECON,
+      IDX_TXN_ID,
+      IDX_TXN_PARENT_ID,
+      IDX_RECON_DATE,
+      IDX_RECON_TXN_ID,
+      IDX_RECON_MERCHANT,
+      IDX_RECON_AMOUNT,
+      IDX_RECON_RECONCILE,
+      IDX_RECON_SPLIT_FLAG,
+      RECON_ROW_TARGET,
+      RECON_ROW_FINISH_MSG,
+      RECON_COL_SAVED_PARAMS,
+      SHEET_NAME_RECONCILE,
+      EDITTYPE_EDIT
+    } = Const;
+    const reconRange = Utils.getDataRange(SHEET_NAME_RECONCILE, IDX_RECON_TXN_ID + 1);
     const sheet = reconRange.getSheet();
 
     if (!this.checkIfReconcileAmountsMatch(sheet, false)) {
       toast('Reconcile is not finished. Amounts do not match.', 'Reconile');
-      const finishReconcilingCell = sheet.getRange(Const.RECON_ROW_FINISH_MSG, Const.IDX_RECON_RECONCILE + 1, 1, 1);
+      const finishReconcilingCell = sheet.getRange(RECON_ROW_FINISH_MSG, IDX_RECON_RECONCILE + 1, 1, 1);
       finishReconcilingCell.setValue('');
       return false;
     }
@@ -219,24 +258,25 @@ export const Reconcile = {
       toast('Applying reconciled transaction changes.', 'Reconcile', 90);
 
       // Get reconcile params from cell
-      const paramsCell = sheet.getRange(Const.RECON_ROW_TARGET, Const.RECON_COL_SAVED_PARAMS, 1, 1);
+      const paramsCell = sheet.getRange(RECON_ROW_TARGET, RECON_COL_SAVED_PARAMS, 1, 1);
       const paramsJson = paramsCell.getValue();
       if (paramsJson == null || paramsJson === '') {
         throw new Error('Reconcile parameters not found.');
       }
       const reconcileParams = JSON.parse(paramsJson);
 
+      Debug.log(`Starting reconcile of regular (non-split) txn rows.`);
       // Get just the reconciled txns
       // Loop through backwards so the index 'i' doesn't get messed up if we delete an entry
       let reconValues = reconRange.getValues();
       let reconLen = reconValues.length;
       let splitValues = [];
       for (let i = reconLen - 1; i >= 0; --i) {
-        if (reconValues[i][Const.IDX_RECON_RECONCILE].toUpperCase() !== 'R') {
+        if (reconValues[i][IDX_RECON_RECONCILE].toUpperCase() !== 'R') {
           // Remove the non-reconciled txn
           reconValues.splice(i, 1);
 
-        } else if (reconValues[i][Const.IDX_RECON_SPLIT_FLAG] === 'S') {
+        } else if (reconValues[i][IDX_RECON_SPLIT_FLAG] === 'S') {
           splitValues.push(reconValues[i]);
           reconValues.splice(i, 1);
         }
@@ -252,15 +292,15 @@ export const Reconcile = {
       const highlightStartCol = txnRange.getSheet().getFrozenColumns();
 
       for (let i = 0; i < reconLen; ++i) {
-        const txnRow = Sheets.TxnData.findTxnRowUnsorted(txnValues, txnDataLen, [Const.IDX_TXN_ID], [ reconValues[i][Const.IDX_RECON_TXN_ID] ]);
+        const txnRow = Sheets.TxnData.findTxnRowUnsorted(txnValues, txnDataLen, [IDX_TXN_ID], [ reconValues[i][IDX_RECON_TXN_ID] ]);
         if (txnRow < 0) {
-          throw new Error(Utilities.formatString('Transaction cannot be found: %s, %s, $%f', reconValues[i][Const.IDX_RECON_DATE], reconValues[i][Const.IDX_RECON_MERCHANT], reconValues[i][Const.IDX_RECON_AMOUNT]));
+          throw new Error(Utilities.formatString('Transaction cannot be found: %s, %s, $%f', reconValues[i][IDX_RECON_DATE], reconValues[i][IDX_RECON_MERCHANT], reconValues[i][IDX_RECON_AMOUNT]));
         }
-        const txnReconCell = txnRange.offset(txnRow, Const.IDX_TXN_CLEAR_RECON, 1, 1);
+        const txnReconCell = txnRange.offset(txnRow, IDX_TXN_CLEAR_RECON, 1, 1);
         txnReconCell.setValue('R');
         // TODO: Make this more efficient
-        Sheets.TxnData.validateTransactionEdit(txnRange.getSheet(), txnRange.getRow() + txnRow, Const.IDX_TXN_CLEAR_RECON + 1, Const.IDX_TXN_CLEAR_RECON + 1, Const.EDITTYPE_EDIT);
-        if (Debug.traceEnabled) Debug.trace('Reconciling txn: ' + reconValues[i][Const.IDX_RECON_TXN_ID]);
+        Sheets.TxnData.validateTransactionEdit(txnRange.getSheet(), txnRange.getRow() + txnRow, IDX_TXN_CLEAR_RECON + 1, IDX_TXN_CLEAR_RECON + 1, EDITTYPE_EDIT);
+        if (Debug.traceEnabled) Debug.trace('Reconciling txn: ' + reconValues[i][IDX_RECON_TXN_ID]);
 
         // Highlight the row
         // (disabled to speed up performance)
@@ -270,19 +310,20 @@ export const Reconcile = {
 
       // Mark split transactions as reconciled, 'R'
       const splitLen = splitValues.length;
-      Debug.log('Finished regular rows. Starting split %s txns', splitLen);
+      Debug.log(`Finished regular rows. Starting ${splitLen} split txns`);
 
       for (let i = 0; i < splitLen; ++i) {
-        const txnRows = Sheets.TxnData.findAllTxnRowsUnsorted(txnValues, txnDataLen, [Const.IDX_TXN_PARENT_ID], [ splitValues[i][Const.IDX_RECON_TXN_ID] ]);
+        const splitRow = splitValues[i];
+        const txnRows = Sheets.TxnData.findAllTxnRowsUnsorted(txnValues, txnDataLen, [IDX_TXN_PARENT_ID], [ splitRow[IDX_RECON_TXN_ID] ]);
         if (txnRows.length == 0) {
-          throw new Error(Utilities.formatString('Child transactions of parent %d cannot be found: %s, %s, $%f', splitValues[i][Const.IDX_RECON_TXN_ID], splitValues[i][Const.IDX_RECON_DATE], splitValues[i][Const.IDX_RECON_MERCHANT], splitValues[i][Const.IDX_RECON_AMOUNT]));
+          throw new Error(Utilities.formatString('Child transactions of parent %d cannot be found: %s, %s, $%f', splitRow[IDX_RECON_TXN_ID], splitRow[IDX_RECON_DATE], splitRow[IDX_RECON_MERCHANT], splitRow[IDX_RECON_AMOUNT]));
         }
 
-        if (Debug.enabled) Debug.log('Child split txn rows (parent id: %d): %s', splitValues[i][Const.IDX_RECON_TXN_ID], txnRows.toSource());
+        if (Debug.enabled) Debug.log(`Reconciling ${txnRows.length} child split txn rows (parent id: ${splitRow[IDX_RECON_TXN_ID]})`);
         for (let j = 0; j < txnRows.length; ++j) {
-          const txnReconCell = txnRange.offset(txnRows[j], Const.IDX_TXN_CLEAR_RECON, 1, 1);
+          const txnReconCell = txnRange.offset(txnRows[j], IDX_TXN_CLEAR_RECON, 1, 1);
           txnReconCell.setValue('R');
-          Sheets.TxnData.validateTransactionEdit(txnRange.getSheet(), txnRange.getRow() + txnRows[j], Const.IDX_TXN_CLEAR_RECON + 1, Const.IDX_TXN_CLEAR_RECON + 1, Const.EDITTYPE_EDIT);
+          Sheets.TxnData.validateTransactionEdit(txnRange.getSheet(), txnRange.getRow() + txnRows[j], IDX_TXN_CLEAR_RECON + 1, IDX_TXN_CLEAR_RECON + 1, EDITTYPE_EDIT);
 
           // Highlight the row
           // (disabled to speed up performance)
@@ -293,6 +334,7 @@ export const Reconcile = {
 
       // Insert dummy row that records the reconcile date and balance
       toast('Creating a "Reconcile transaction" so you can track your reconcile history in Mint.', 'Reconcile', 90);
+      Debug.log(`Finished reconciling rows. Creating dummy "reconcile txn"`);
 
       reconcileParams.newBalance *= 1.00; // Make sure balance is a 'float'
       const endDate = new Date(reconcileParams.endDate);
@@ -305,7 +347,7 @@ export const Reconcile = {
                                                  memo, null, propsJson, reconcileParams.mintAccount);
 
       // Sort the transactions by date then account so all of the reconcile txns are displayed together
-      txnRange.sort([{column: Const.IDX_TXN_ACCOUNT + 1, ascending: true}, {column: Const.IDX_TXN_DATE + 1, ascending: false}]);
+      txnRange.sort([{column: IDX_TXN_ACCOUNT + 1, ascending: true}, {column: IDX_TXN_DATE + 1, ascending: false}]);
 
       // Add dummy reconcile txn to txnValues array too, then sort the values and determine where the dummy row is.
       // All this so we can select the row so the reconciled txns are visible.
@@ -315,12 +357,12 @@ export const Reconcile = {
       txnRow[Const.IDX_TXN_EDIT_STATUS] = 'N';
       txnValues.push(txnRow);
       txnValues.sort(function(a, b) {
-        const aAccount = String(a[Const.IDX_TXN_ACCOUNT]);
-        const bAccount = String(b[Const.IDX_TXN_ACCOUNT]);
+        const aAccount = `${a[IDX_TXN_ACCOUNT]}`;
+        const bAccount = `${b[IDX_TXN_ACCOUNT]}`;
         if (aAccount < bAccount) { return -1; }
         if (aAccount > bAccount) { return 1; }
-        if (a[Const.IDX_TXN_DATE] > b[Const.IDX_TXN_DATE]) { return -1; }
-        if (a[Const.IDX_TXN_DATE] < b[Const.IDX_TXN_DATE]) { return 1; }
+        if (a[IDX_TXN_DATE] > b[IDX_TXN_DATE]) { return -1; }
+        if (a[IDX_TXN_DATE] < b[IDX_TXN_DATE]) { return 1; }
         return 0;
       });
 
@@ -335,6 +377,7 @@ export const Reconcile = {
       }
 
       toast('Finished. Remember to save the updated txns.', 'Reconcile', 5);
+      Debug.log(`Reconcile complete`);
 
       // Reconcile is complete. Clear the reconcile sheet (rows and header area).
       this.initReconcileSheet(sheet, null, 0, 0);
@@ -355,6 +398,7 @@ export const Reconcile = {
   /**
    * submitReconciledTransactions - Called from reconcile_submit.html
    * args = reconcileParams (see above)
+   * -- NOT USED -- We let user choose when to save reconciled txns instead
    */
   submitReconciledTransactions(args) {
     if (Utils.checkDemoMode()) return;
@@ -420,8 +464,6 @@ export const Reconcile = {
       //const reconRange = sheet.getDataRange();
       //if (Debug.enabled) Debug.log(Utilities.formatString('Reconcile Sheet range: (%s, %s), (%s,%s)', reconRange.getRow(), reconRange.getColumn(), reconRange.getNumRows(), reconRange.getNumColumns()));
       const finishReconcilingMsgCell = sheet.getRange(Const.RECON_ROW_FINISH_MSG, Const.RECON_COL_FINISH_MSG, 1, 1);
-      const finishReconcilingCell = sheet.getRange(Const.RECON_ROW_FINISH_MSG, Const.IDX_RECON_RECONCILE + 1, 1, 1);
-      const cancelReconcilingMsgCell = sheet.getRange(Const.RECON_ROW_FINISH_MSG, Const.RECON_COL_CANCEL_MSG, 1, 1);
 
       let msgToFinish = '';
       if (this.checkIfReconcileAmountsMatch(sheet, true)) {
@@ -454,7 +496,8 @@ export const Reconcile = {
     return amountsMatch;
   },
 
-  initReconcileSheet(sheet, account, prevBalance, newBalance) {
+  initReconcileSheet(sheet, account, prevBalance, newBalance, endDate) {
+    const endDateStr = (endDate instanceof Date ? endDate.toISOString().split('T')[0] : endDate || '');
     const reconRange = Utils.getDataRange(Const.SHEET_NAME_RECONCILE, Const.IDX_RECON_TXN_ID + 1);
     reconRange.clear();
 
@@ -473,7 +516,7 @@ export const Reconcile = {
     if (account == null) {
       reconTargetCell.clearNote();
     } else {
-      reconTargetCell.setNote(Utilities.formatString('Prev. Balance: $%f\nNew Balance:   $%f\nTarget amount: $%f', prevBalance, newBalance, targetAmount));
+      reconTargetCell.setNote(Utilities.formatString('Prev. Balance: $%f\nNew Balance:   $%f\nTarget amount: $%f\nEnd date:          %s', prevBalance, newBalance, targetAmount, endDateStr));
     }
 
     reconTotalCell.setBackground(Const.NO_COLOR);
@@ -485,7 +528,7 @@ export const Reconcile = {
   },
 
   Window: {
-    show: function() {
+    show() {
       try {
         const mintAccounts = Mint.getMintAccounts(null);
         if (mintAccounts == null || mintAccounts.length === 0) {
@@ -514,112 +557,6 @@ export const Reconcile = {
         Debug.log(Debug.getExceptionInfo(e));
         Browser.msgBox(e);
       }
-    },
-
-    showOld()
-    {
-      const acctInfoMap = Sheets.AccountData.getAccountInfoMap();
-      if (acctInfoMap == null) {
-        Browser.msgBox('No accounts were found. Make sure you have imported your accounts from Mint.');
-        return;
-      }
-
-      const mintAccounts = Mint.getMintAccounts(null);
-      if (mintAccounts == null || mintAccounts.length === 0) {
-        Browser.msgBox('No Mint accounts were found. Make sure you have imported your transactions from Mint.');
-        return;
-      }
-      Debug.log(mintAccounts);
-
-      const uiApp = UiApp.createApplication().setWidth(400).setHeight(250).setTitle('Reconcile an Account');
-
-      const accountList = uiApp.createListBox().setVisibleItemCount(1).setName('accountInfo').setId('accountList');
-      const reconcileMap = Sheets.TxnData.getRecentReconcileBalances(null);
-      let firstAcctBalance = null;
-      let firstAcctDate = null;
-
-      for (let name in acctInfoMap) {
-        if (acctInfoMap[name].type == 'BankAccount' || acctInfoMap[name].type == 'CreditAccount') {
-          const reconInfo = reconcileMap[name];
-          let balance = 0.00;
-          let reconDate = '';
-          if (reconInfo && (reconInfo.balance || reconInfo.balance === 0)) {
-            balance = reconInfo.balance;
-            reconDate = Utilities.formatDate(reconInfo.date, 'GMT', 'M/d/yyyy');
-          }
-
-          accountList.addItem(name, Utilities.formatString('%s%s%s%s%f%s%s', name, Const.DELIM_2, acctInfoMap[name].type, Const.DELIM_2, balance, Const.DELIM_2, reconDate));
-
-          if (firstAcctBalance === null) {
-            // save balance and date of first list item so we can initialize previousBalance / previousReconDate fields below.
-            firstAcctBalance = balance; 
-            firstAcctDate = reconDate;
-          }
-        }
-      }
-      accountList.addChangeHandler(uiApp.createServerHandler('Reconcile_Window_onAccountChanged').addCallbackElement(accountList));
-
-      const mintAccountLabel = uiApp.createLabel('Mint Account:');
-      const mintAccountList = uiApp.createListBox().setVisibleItemCount(1).setName('mintAccount');
-      
-      for (let i = 0; i < mintAccounts.length; ++i) {
-        mintAccountList.addItem(mintAccounts[i]);
-      }
-
-      const endDateField = uiApp.createDateBox().setName('endDate');
-      const previousBalanceField = uiApp.createTextBox().setName('previousBalance').setId('previousBalance');
-      const prevSpacer = uiApp.createLabel('  ');
-      const previousReconDateField = uiApp.createLabel().setId('previousReconDate').setStyleAttribute('color', 'gray');
-      const prevPanel = uiApp.createHorizontalPanel().setVerticalAlignment(UiApp.VerticalAlignment.MIDDLE);
-      prevPanel.add(previousBalanceField).add(prevSpacer).add(previousReconDateField);
-      const newBalanceField = uiApp.createTextBox().setName('newBalance');
-
-//      const validateCurrencyHandler = uiApp.createClientHandler().validateNotMatches(previousBalanceField, '[0-9,.-]+', 'g').forEventSource().setText('numbers only');
-      let validateCurrencyHandler = uiApp.createClientHandler().validateNotNumber(previousBalanceField).forEventSource().setText('0.00');
-      previousBalanceField.addChangeHandler(validateCurrencyHandler);
-      validateCurrencyHandler = uiApp.createClientHandler().validateNotNumber(newBalanceField).forEventSource().setText('0.00');
-      newBalanceField.addChangeHandler(validateCurrencyHandler);
-
-      const grid = uiApp.createGrid(6, 2).setWidth('100%');
-      grid.setWidget(0, 0, uiApp.createLabel('Account:'));
-      grid.setWidget(0, 1, accountList);
-      grid.setWidget(1, 0, uiApp.createLabel('End date:'));
-      grid.setWidget(1, 1, endDateField);
-      grid.setWidget(2, 0, uiApp.createLabel('Starting balance:'));
-      grid.setWidget(2, 1, prevPanel);
-      grid.setWidget(3, 0, uiApp.createLabel('Ending balance:'));
-      grid.setWidget(3, 1, newBalanceField);
-      grid.setWidget(4, 0, uiApp.createLabel()); // spacer
-      grid.setWidget(5, 0, mintAccountLabel);
-      grid.setWidget(5, 1, mintAccountList);
-
-      const btnOk = uiApp.createButton('OK').setId('ok_button').setHeight(30).setWidth(75);
-      btnOk.addClickHandler(uiApp.createClientHandler().forTargets(btnOk).setEnabled(false));
-      const btnCancel = uiApp.createButton('Cancel').setHeight(30).setWidth(75);
-
-//      const spacerPanel = uiApp.createVerticalPanel().setHeight(20).add(uiApp.createLabel());
-      const vPanel = uiApp.createVerticalPanel();
-      vPanel.add(grid);//.add(spacerPanel);
-      const buttonPanel = uiApp.createHorizontalPanel().setHeight(50).setWidth('100%');
-      buttonPanel.setVerticalAlignment(UiApp.VerticalAlignment.BOTTOM).setHorizontalAlignment(UiApp.HorizontalAlignment.CENTER);
-      buttonPanel.add(btnOk).add(btnCancel);
-
-      uiApp.add(vPanel).add(buttonPanel);
-
-      // Add handlers
-      const okHandler = uiApp.createServerHandler('Reconcile_Window_onOkClicked').addCallbackElement(grid);
-      btnOk.addClickHandler(okHandler);
-      btnCancel.addClickHandler(uiApp.createServerHandler('Reconcile_Window_onCancelClicked'));
-
-      // Pre-populate some fields
-      endDateField.setValue(new Date()); // today
-      previousBalanceField.setValue(String(firstAcctBalance));
-      previousReconDateField.setText(firstAcctDate);
-      newBalanceField.setValue('0.00');
-
-      // Show the window
-      const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-      spreadsheet.show(uiApp);
     },
 
     //-------------------------------------------------------------------------------------
