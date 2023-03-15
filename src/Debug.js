@@ -1,6 +1,6 @@
 'use strict';
 /*
- * Copyright (c) 2013-2019 b3devs@gmail.com
+ * Copyright (c) 2013-2023 b3devs@gmail.com
  * MIT License: https://spdx.org/licenses/MIT.html
  */
 
