@@ -1,5 +1,5 @@
 {
-  "author": "b3devs",
+  "author": "b3devs@gmail.com",
   "description": "Mojito library used by Mojito spreadsheet to access Mint.com",
   "devDependencies": {
     "@babel/core": "^7.18.6",

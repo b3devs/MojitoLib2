@@ -15,3 +15,5 @@ To modify this library to your liking, you must do the following:
 1. Open your updated MojitoLib in Google Drive and create a new version (File > Manage Versions menu).
 1. Open your copy of Mojito, go to the Script Editor, and [change the MojitoLib library](https://developers.google.com/apps-script/guides/libraries) to the one in *your* Google Drive.
 1. When you are happy with your changes, commit the files to your local git repo: `git add -u` then `git commit`
+
+**NOTE:** The Mojito spreadsheet expects the name of this library to be 'MojitoLib'. So if you want to add your own custom MojitoLib library to Mojito, you must rename it to 'MojitoLib'.
