@@ -25,6 +25,17 @@ export const Reconcile = {
     return (!!reconAccount.getValue());
   },
 
+  getReconcileParams() {
+    // Get reconcile params from cell
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(Const.SHEET_NAME_RECONCILE);
+    const paramsCell = sheet.getRange(Const.RECON_ROW_TARGET, Const.RECON_COL_SAVED_PARAMS, 1, 1);
+    const paramsJson = paramsCell.getValue();
+    if (paramsJson == null || paramsJson === '') {
+      throw new Error('Reconcile parameters not found.');
+    }
+    return JSON.parse(paramsJson);
+  },
+
   cancelReconcile(showPrompt) {
     if (showPrompt) {
       if (!this.isReconcileAlreadyInProgress()) {
@@ -218,8 +229,42 @@ export const Reconcile = {
 
   },
 
-  finishReconcile()
-  {
+  autoReconcileTransactions() {
+    if (!this.isReconcileAlreadyInProgress()) {
+      toast('No reconcile is in progress.', 'Reconcile');
+      return;
+    }
+
+    const reconcileParams = this.getReconcileParams();
+    const endDate = new Date(reconcileParams.endDate);
+
+    const {
+      IDX_RECON_DATE,
+      IDX_RECON_TXN_ID,
+      IDX_RECON_RECONCILE,
+      SHEET_NAME_RECONCILE,
+    } = Const;
+    const reconRange = Utils.getDataRange(SHEET_NAME_RECONCILE, IDX_RECON_TXN_ID + 1);
+
+    let setRecon = false;
+    let reconValues = reconRange.getValues();
+    for (let reconRow of reconValues) {
+      if (reconRow[IDX_RECON_DATE] <= endDate) {
+        reconRow[IDX_RECON_RECONCILE] = 'r';
+        setRecon = true;
+      }
+    }
+
+    if (setRecon) {
+      let rColValues = reconValues.map(row => [row[IDX_RECON_RECONCILE]]);
+      let rColRange = reconRange.offset(0, IDX_RECON_RECONCILE, rColValues.length, 1);
+      rColRange.setValues(rColValues);
+    }
+
+    this.checkIfReconcileAmountsMatch(reconRange.getSheet(), true, true);
+  },
+
+  finishReconcile() {
     if (!this.isReconcileAlreadyInProgress()) {
       toast('No reconcile is in progress.', 'Reconcile');
       return false;
@@ -237,16 +282,14 @@ export const Reconcile = {
       IDX_RECON_AMOUNT,
       IDX_RECON_RECONCILE,
       IDX_RECON_SPLIT_FLAG,
-      RECON_ROW_TARGET,
       RECON_ROW_FINISH_MSG,
-      RECON_COL_SAVED_PARAMS,
       SHEET_NAME_RECONCILE,
       EDITTYPE_EDIT
     } = Const;
     const reconRange = Utils.getDataRange(SHEET_NAME_RECONCILE, IDX_RECON_TXN_ID + 1);
     const sheet = reconRange.getSheet();
 
-    if (!this.checkIfReconcileAmountsMatch(sheet, false)) {
+    if (!this.checkIfReconcileAmountsMatch(sheet, false, false)) {
       toast('Reconcile is not finished. Amounts do not match.', 'Reconile');
       const finishReconcilingCell = sheet.getRange(RECON_ROW_FINISH_MSG, IDX_RECON_RECONCILE + 1, 1, 1);
       finishReconcilingCell.setValue('');
@@ -257,13 +300,7 @@ export const Reconcile = {
     {
       toast('Applying reconciled transaction changes.', 'Reconcile', 90);
 
-      // Get reconcile params from cell
-      const paramsCell = sheet.getRange(RECON_ROW_TARGET, RECON_COL_SAVED_PARAMS, 1, 1);
-      const paramsJson = paramsCell.getValue();
-      if (paramsJson == null || paramsJson === '') {
-        throw new Error('Reconcile parameters not found.');
-      }
-      const reconcileParams = JSON.parse(paramsJson);
+      const reconcileParams = this.getReconcileParams();
 
       Debug.log(`Starting reconcile of regular (non-split) txn rows.`);
       // Get just the reconciled txns
@@ -463,17 +500,11 @@ export const Reconcile = {
 
       //const reconRange = sheet.getDataRange();
       //if (Debug.enabled) Debug.log(Utilities.formatString('Reconcile Sheet range: (%s, %s), (%s,%s)', reconRange.getRow(), reconRange.getColumn(), reconRange.getNumRows(), reconRange.getNumColumns()));
-      const finishReconcilingMsgCell = sheet.getRange(Const.RECON_ROW_FINISH_MSG, Const.RECON_COL_FINISH_MSG, 1, 1);
-
-      let msgToFinish = '';
-      if (this.checkIfReconcileAmountsMatch(sheet, true)) {
-        msgToFinish = Const.RECON_MSG_FINISH;
-      }
-      finishReconcilingMsgCell.setValue(msgToFinish);
+      this.checkIfReconcileAmountsMatch(sheet, true, true);
     }
   },
 
-  checkIfReconcileAmountsMatch(sheet, changeCellBackgrounds) {
+  checkIfReconcileAmountsMatch(sheet, changeCellBackgrounds, showFinishMsg) {
     let amountsMatch = false;
     const reconTargetCell = sheet.getRange(Const.RECON_ROW_TARGET, Const.IDX_RECON_AMOUNT + 1, 1, 1);
     const reconTotalCell = sheet.getRange(Const.RECON_ROW_SUM, Const.IDX_RECON_AMOUNT + 1, 1, 1);
@@ -481,18 +512,28 @@ export const Reconcile = {
     const total = reconTotalCell.getValue();
     
     let color = Const.NO_COLOR;
-    if (Debug.enabled) Debug.log(Utilities.formatString('target: %f, total: %f', target, total));
+    // if (Debug.enabled) Debug.log(Utilities.formatString('target: %f, total: %f', target, total));
     if (0 == Math.round(Math.abs(total * 100)) - Math.round(Math.abs(target * 100))) {
-      Debug.log('Reconcile amount matches target');
+      Debug.log(`Reconcile amount matches target (${target})`);
       amountsMatch = true;
       color = '#aaeeaa'; // light green
     }
-    
+
     if (changeCellBackgrounds) {
       reconTargetCell.setBackground(color);
       reconTotalCell.setBackground(amountsMatch ? color : this.RECON_ROW_COLOR);
     }
-    
+
+    if (showFinishMsg) {
+      const finishReconcilingMsgCell = sheet.getRange(Const.RECON_ROW_FINISH_MSG, Const.RECON_COL_FINISH_MSG, 1, 1);
+
+      let msgToFinish = '';
+      if (amountsMatch) {
+        msgToFinish = Const.RECON_MSG_FINISH;
+      }
+      finishReconcilingMsgCell.setValue(msgToFinish);
+    }
+
     return amountsMatch;
   },
 
