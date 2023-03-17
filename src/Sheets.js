@@ -1102,9 +1102,9 @@ export const Sheets = {
 
           toast("Split transaction inserted", "", 2);
 
-          // Set focus to amount column of new row
-          let newAmountCell = newRowRange.offset(0, Const.IDX_TXN_AMOUNT, 1, 1);
-          newAmountCell.activate();
+          // Set focus to amount column of new row -- On second thought, don't do this. Kind of annoying.
+          // let newAmountCell = newRowRange.offset(0, Const.IDX_TXN_AMOUNT, 1, 1);
+          // newAmountCell.activate();
         }
 
         if (rebalanceSplitAmount === true) {

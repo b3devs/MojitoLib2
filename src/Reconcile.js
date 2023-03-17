@@ -298,28 +298,29 @@ export const Reconcile = {
 
     try
     {
-      toast('Applying reconciled transaction changes.', 'Reconcile', 90);
+      toast('Finishing ...', 'Reconcile', 5);
 
       const reconcileParams = this.getReconcileParams();
 
       Debug.log(`Starting reconcile of regular (non-split) txn rows.`);
       // Get just the reconciled txns
       // Loop through backwards so the index 'i' doesn't get messed up if we delete an entry
-      let reconValues = reconRange.getValues();
-      let reconLen = reconValues.length;
+      let reconValuesFull = reconRange.getValues();
+      let reconValues = [];
       let splitValues = [];
-      for (let i = reconLen - 1; i >= 0; --i) {
-        if (reconValues[i][IDX_RECON_RECONCILE].toUpperCase() !== 'R') {
-          // Remove the non-reconciled txn
-          reconValues.splice(i, 1);
-
-        } else if (reconValues[i][IDX_RECON_SPLIT_FLAG] === 'S') {
-          splitValues.push(reconValues[i]);
-          reconValues.splice(i, 1);
+      for (let reconRow of reconValuesFull) {
+        if (reconRow[IDX_RECON_RECONCILE].toUpperCase() === 'R') {
+          if (reconRow[IDX_RECON_SPLIT_FLAG] === 'S') {
+            splitValues.push(reconRow);
+          } else {
+            reconValues.push(reconRow);
+          }
         }
       }
 
-      reconLen = reconValues.length;
+      let reconLen = reconValues.length;
+      toast(`Applying ${reconLen} reconciled transaction changes.`, 'Reconcile', 90);
+
       const txnRange = Utils.getTxnDataRange();
       const txnValues = txnRange.getValues();
       const txnDataLen = txnValues.length;
